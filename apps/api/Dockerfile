@@ -1,0 +1,26 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY apps/api ./apps/api
+
+# Generate Prisma client
+RUN cd apps/api && pnpm prisma generate
+
+# Build the application
+RUN cd apps/api && pnpm build
+
+EXPOSE 3001
+
+CMD ["cd", "apps/api", "&&", "pnpm", "start:prod"]

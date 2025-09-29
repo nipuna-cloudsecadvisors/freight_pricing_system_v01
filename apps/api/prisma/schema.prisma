@@ -1,0 +1,535 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  SBU_HEAD
+  SALES
+  CSE
+  PRICING
+  MGMT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum CustomerApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum RateRequestMode {
+  SEA
+  AIR
+}
+
+enum RateRequestType {
+  FCL
+  LCL
+}
+
+enum RateRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum BookingRequestStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum BookingRequestSource {
+  PREDEFINED
+  REQUEST
+}
+
+enum ItineraryType {
+  SP
+  CSE
+}
+
+enum ItineraryStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum SalesActivityType {
+  VISIT
+  CALL
+  MEETING
+}
+
+enum NotificationChannel {
+  SYSTEM
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  SUBMIT
+  CANCEL
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  name      String
+  phone     String?
+  role      UserRole
+  status    UserStatus @default(ACTIVE)
+  sbuId     String?
+  password  String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  sbu                    SBU?                    @relation(fields: [sbuId], references: [id])
+  customersCreated       Customer[]              @relation("CustomerCreatedBy")
+  customersApproved      Customer[]              @relation("CustomerApprovedBy")
+  rateRequestsCreated    RateRequest[]           @relation("RateRequestCreatedBy")
+  rateRequestResponses   RateRequestResponse[]
+  lineQuotes             LineQuote[]
+  bookingRequestsRaised  BookingRequest[]        @relation("BookingRequestRaisedBy")
+  jobsOpened             Job[]                   @relation("JobOpenedBy")
+  jobCompletions         JobCompletion[]
+  itineraries            Itinerary[]
+  itinerariesApproved    Itinerary[]             @relation("ItineraryApprovedBy")
+  salesActivities        SalesActivity[]
+  leads                  Lead[]
+  notifications          Notification[]
+  auditEvents            AuditEvent[]
+  pricingAssignments     PricingTeamAssignment[]
+
+  @@map("users")
+}
+
+model SBU {
+  id         String @id @default(uuid())
+  name       String
+  headUserId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  headUser User?  @relation(fields: [headUserId], references: [id])
+  users    User[]
+
+  @@map("sbus")
+}
+
+model Customer {
+  id             String                @id @default(uuid())
+  companyName    String
+  contactPerson  String
+  email          String
+  phone          String?
+  address        String?
+  city           String?
+  country        String?
+  approvalStatus CustomerApprovalStatus @default(PENDING)
+  createdById    String
+  approvedById   String?
+  approvedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  // Relations
+  createdBy  User            @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?           @relation("CustomerApprovedBy", fields: [approvedById], references: [id])
+  rateRequests RateRequest[]
+  bookingRequests BookingRequest[]
+  salesActivities SalesActivity[]
+  leads Lead[]
+  itineraryItems ItineraryItem[]
+
+  @@map("customers")
+}
+
+model TradeLane {
+  id       String @id @default(uuid())
+  region  String
+  name    String
+  code    String  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  predefinedRates PredefinedRate[]
+  pricingAssignments PricingTeamAssignment[]
+
+  @@map("trade_lanes")
+}
+
+model Port {
+  id      String @id @default(uuid())
+  unlocode String @unique
+  name    String
+  country String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  predefinedRatesAsPol PredefinedRate[] @relation("PortAsPol")
+  predefinedRatesAsPod PredefinedRate[] @relation("PortAsPod")
+  rateRequestsAsPol    RateRequest[]    @relation("RateRequestPol")
+  rateRequestsAsPod    RateRequest[]    @relation("RateRequestPod")
+
+  @@map("ports")
+}
+
+model ShippingLine {
+  id   String @id @default(uuid())
+  name String
+  code String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lineQuotes LineQuote[]
+
+  @@map("shipping_lines")
+}
+
+model EquipmentType {
+  id                    String @id @default(uuid())
+  name                  String
+  isReefer              Boolean @default(false)
+  isFlatRackOpenTop     Boolean @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  predefinedRates PredefinedRate[]
+  rateRequests    RateRequest[]
+  rateRequestResponses RateRequestResponse[]
+  lineQuotes      LineQuote[]
+
+  @@map("equipment_types")
+}
+
+model PricingTeamAssignment {
+  id          String @id @default(uuid())
+  tradeLaneId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  tradeLane TradeLane @relation(fields: [tradeLaneId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([tradeLaneId, userId])
+  @@map("pricing_team_assignments")
+}
+
+model PredefinedRate {
+  id           String    @id @default(uuid())
+  tradeLaneId  String
+  polId        String
+  podId        String
+  service      String
+  equipTypeId  String
+  isLcl        Boolean   @default(false)
+  validFrom    DateTime
+  validTo      DateTime
+  status       String    @default("active") // active, expired
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  tradeLane TradeLane    @relation(fields: [tradeLaneId], references: [id])
+  pol       Port         @relation("PortAsPol", fields: [polId], references: [id])
+  pod       Port         @relation("PortAsPod", fields: [podId], references: [id])
+  equipType EquipmentType @relation(fields: [equipTypeId], references: [id])
+
+  @@map("predefined_rates")
+}
+
+model RateRequest {
+  id                String            @id @default(uuid())
+  refNo             String            @unique
+  mode              RateRequestMode
+  type              RateRequestType
+  polId             String?
+  podId             String?
+  doorOrCy          String?           // DOOR, CY
+  usZip             String?
+  preferredLineId   String?
+  equipTypeId       String?
+  reeferTemp        Float?
+  palletCount       Int?
+  palletDims        String?
+  hsCode            String?
+  weightTons        Float
+  incoterm          String
+  marketRate        Float?
+  specialInstructions String?
+  cargoReadyDate    DateTime?
+  vesselRequired    Boolean           @default(false)
+  detentionFreeTime String?           // 7, 14, 21, OTHER
+  salespersonId     String
+  customerId        String
+  status            RateRequestStatus @default(PENDING)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  pol             Port?                @relation("RateRequestPol", fields: [polId], references: [id])
+  pod             Port?                @relation("RateRequestPod", fields: [podId], references: [id])
+  preferredLine   ShippingLine?        @relation(fields: [preferredLineId], references: [id])
+  equipType       EquipmentType?       @relation(fields: [equipTypeId], references: [id])
+  salesperson     User                 @relation("RateRequestCreatedBy", fields: [salespersonId], references: [id])
+  customer        Customer             @relation(fields: [customerId], references: [id])
+  responses       RateRequestResponse[]
+  lineQuotes      LineQuote[]
+  bookingRequests BookingRequest[]
+
+  @@map("rate_requests")
+}
+
+model RateRequestResponse {
+  id                    String    @id @default(uuid())
+  rateRequestId         String
+  lineNo                Int
+  requestedLineId       String?
+  requestedEquipTypeId  String?
+  vesselName            String?
+  eta                   DateTime?
+  etd                   DateTime?
+  fclCutoff             DateTime?
+  docCutoff             DateTime?
+  validTo               DateTime
+  chargesJson           Json
+  createdAt             DateTime  @default(now())
+
+  // Relations
+  rateRequest      RateRequest     @relation(fields: [rateRequestId], references: [id], onDelete: Cascade)
+  requestedLine    ShippingLine?   @relation(fields: [requestedLineId], references: [id])
+  requestedEquipType EquipmentType? @relation(fields: [requestedEquipTypeId], references: [id])
+
+  @@map("rate_request_responses")
+}
+
+model LineQuote {
+  id           String    @id @default(uuid())
+  rateRequestId String
+  lineId       String
+  equipTypeId  String?
+  termsJson    Json
+  validTo      DateTime
+  selected     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  rateRequest RateRequest     @relation(fields: [rateRequestId], references: [id], onDelete: Cascade)
+  line        ShippingLine    @relation(fields: [lineId], references: [id])
+  equipType   EquipmentType?  @relation(fields: [equipTypeId], references: [id])
+
+  @@map("line_quotes")
+}
+
+model BookingRequest {
+  id           String                @id @default(uuid())
+  raisedById   String
+  customerId   String
+  rateSource   BookingRequestSource
+  linkId       String                // ID of predefined rate or rate request
+  status       BookingRequestStatus  @default(PENDING)
+  cancelReason String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  // Relations
+  raisedBy  User         @relation("BookingRequestRaisedBy", fields: [raisedById], references: [id])
+  customer  Customer     @relation(fields: [customerId], references: [id])
+  roDocuments RoDocument[]
+  jobs      Job[]
+
+  @@map("booking_requests")
+}
+
+model RoDocument {
+  id               String   @id @default(uuid())
+  bookingRequestId String
+  number           String
+  fileUrl          String?
+  receivedAt       DateTime @default(now())
+
+  // Relations
+  bookingRequest BookingRequest @relation(fields: [bookingRequestId], references: [id], onDelete: Cascade)
+
+  @@map("ro_documents")
+}
+
+model Job {
+  id             String   @id @default(uuid())
+  bookingRequestId String
+  erpJobNo       String
+  openedById     String
+  openedAt       DateTime @default(now())
+
+  // Relations
+  bookingRequest BookingRequest @relation(fields: [bookingRequestId], references: [id])
+  openedBy       User           @relation("JobOpenedBy", fields: [openedById], references: [id])
+  completions    JobCompletion[]
+
+  @@map("jobs")
+}
+
+model JobCompletion {
+  id         String   @id @default(uuid())
+  jobId      String
+  cseUserId  String
+  detailsJson Json
+  completedAt DateTime @default(now())
+
+  // Relations
+  job     Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  cseUser User @relation(fields: [cseUserId], references: [id])
+
+  @@map("job_completions")
+}
+
+model Itinerary {
+  id          String          @id @default(uuid())
+  ownerId     String
+  type        ItineraryType
+  weekStart   DateTime
+  status      ItineraryStatus @default(DRAFT)
+  approverId  String?
+  approveNote String?
+  submittedAt DateTime?
+  decidedAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations
+  owner   User            @relation(fields: [ownerId], references: [id])
+  approver User?          @relation("ItineraryApprovedBy", fields: [approverId], references: [id])
+  items   ItineraryItem[]
+
+  @@map("itineraries")
+}
+
+model ItineraryItem {
+  id          String    @id @default(uuid())
+  itineraryId String
+  date        DateTime
+  customerId  String?
+  leadId      String?
+  purpose     String
+  plannedTime String?
+  location    String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  lead      Lead?     @relation(fields: [leadId], references: [id])
+
+  @@map("itinerary_items")
+}
+
+model SalesActivity {
+  id            String            @id @default(uuid())
+  userId        String
+  customerId    String?
+  leadId        String?
+  type          SalesActivityType
+  date          DateTime
+  notes         String?
+  outcome       String?
+  nextActionDate DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+  lead     Lead?     @relation(fields: [leadId], references: [id])
+
+  @@map("sales_activities")
+}
+
+model Lead {
+  id          String   @id @default(uuid())
+  companyName String
+  contact     String
+  stage       String
+  ownerId     String
+  source      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner           User            @relation(fields: [ownerId], references: [id])
+  salesActivities SalesActivity[]
+  itineraryItems  ItineraryItem[]
+
+  @@map("leads")
+}
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  channel   NotificationChannel
+  subject   String
+  body      String
+  status    NotificationStatus  @default(PENDING)
+  meta      Json?
+  createdAt DateTime            @default(now())
+  sentAt    DateTime?
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model AuditEvent {
+  id       String      @id @default(uuid())
+  actorId  String
+  entity   String
+  entityId String
+  action   AuditAction
+  payload  Json?
+  ts       DateTime    @default(now())
+
+  // Relations
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@map("audit_events")
+}
